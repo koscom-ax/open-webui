@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  open-webui_deploy:
+    container_name: open-webui_deploy
+    image: "${IMAGE_BASE_NAME}:${VERSION}_with_cache"
+    restart: always
+    ports:
+      - "${HOST_PORT}:${CONTAINER_PORT}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "/opt/open-webui:${DATA_DIR}"
+    command: ["bash", "start.sh"]

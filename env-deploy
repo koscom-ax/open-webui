@@ -1,5 +1,5 @@
 # Deployment Configuration
-VERSION=2025_07_21
+VERSION=2025_08_21
 IMAGE_BASE_NAME=koscomtechdev/open-webui
 CONTAINER_NAME=open-webui_deploy
 HOST_PORT=8080
