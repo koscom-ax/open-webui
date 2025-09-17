@@ -175,7 +175,7 @@ async def chat_completion_tools_handler(
     sources = []
 
     specs = [tool["spec"] for tool in tools.values()]
-    tools_specs = json.dumps(specs)
+    tools_specs = json.dumps(specs, ensure_ascii=False)
 
     if request.app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE != "":
         template = request.app.state.config.TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE
@@ -258,7 +258,7 @@ async def chat_completion_tools_handler(
                             tool_result.remove(item)
 
                 if isinstance(tool_result, dict) or isinstance(tool_result, list):
-                    tool_result = json.dumps(tool_result, indent=2)
+                    tool_result = json.dumps(tool_result, indent=2, ensure_ascii=False)
 
                 if isinstance(tool_result, str):
                     tool = tools[tool_function_name]
@@ -974,7 +974,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     # Remove files duplicates
     if files:
-        files = list({json.dumps(f, sort_keys=True): f for f in files}.values())
+        files = list({json.dumps(f, sort_keys=True, ensure_ascii=False): f for f in files}.values())
 
     metadata = {
         **metadata,
@@ -1579,9 +1579,9 @@ async def process_chat_response(
                                         break
 
                                 if tool_result is not None:
-                                    tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="true" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments))}" result="{html.escape(json.dumps(tool_result, ensure_ascii=False))}" files="{html.escape(json.dumps(tool_result_files)) if tool_result_files else ""}">\n<summary>Tool Executed</summary>\n</details>\n'
+                                    tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="true" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments, ensure_ascii=False))}" result="{html.escape(json.dumps(tool_result, ensure_ascii=False))}" files="{html.escape(json.dumps(tool_result_files)) if tool_result_files else ""}">\n<summary>Tool Executed</summary>\n</details>\n'
                                 else:
-                                    tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="false" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments))}">\n<summary>Executing...</summary>\n</details>\n'
+                                    tool_calls_display_content = f'{tool_calls_display_content}<details type="tool_calls" done="false" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments, ensure_ascii=False))}">\n<summary>Executing...</summary>\n</details>\n'
 
                             if not raw:
                                 content = f"{content}{tool_calls_display_content}"
@@ -1597,7 +1597,7 @@ async def process_chat_response(
                                     "arguments", ""
                                 )
 
-                                tool_calls_display_content = f'{tool_calls_display_content}\n<details type="tool_calls" done="false" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments))}">\n<summary>Executing...</summary>\n</details>\n'
+                                tool_calls_display_content = f'{tool_calls_display_content}\n<details type="tool_calls" done="false" id="{tool_call_id}" name="{tool_name}" arguments="{html.escape(json.dumps(tool_arguments, ensure_ascii=False))}">\n<summary>Executing...</summary>\n</details>\n'
 
                             if not raw:
                                 content = f"{content}{tool_calls_display_content}"
@@ -1653,7 +1653,7 @@ async def process_chat_response(
                             content += "\n"
 
                         if output:
-                            output = html.escape(json.dumps(output))
+                            output = html.escape(json.dumps(output, ensure_ascii=False))
 
                             if raw:
                                 content = f'{content}<code_interpreter type="code" lang="{lang}">\n{block["content"]}\n</code_interpreter>\n```output\n{output}\n```\n'
@@ -2353,7 +2353,7 @@ async def process_chat_response(
                             f"Parsed args from {tool_args} to {tool_function_params}"
                         )
                         tool_call.setdefault("function", {})["arguments"] = json.dumps(
-                            tool_function_params
+                            tool_function_params, ensure_ascii=False
                         )
 
                         tool_result = None
@@ -2738,7 +2738,7 @@ async def process_chat_response(
                 )
 
                 if event:
-                    yield wrap_item(json.dumps(event))
+                    yield wrap_item(json.dumps(event, ensure_ascii=False))
 
             async for data in original_generator:
                 data, _ = await process_filter_functions(
