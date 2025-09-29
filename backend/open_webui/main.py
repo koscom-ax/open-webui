@@ -1500,6 +1500,7 @@ async def chat_completion(
                 request, form_data, user, metadata, model
             )
 
+            form_data["metadata"]["tool_ids"] = []
             response = await chat_completion_handler(request, form_data, user)
             if metadata.get("chat_id") and metadata.get("message_id"):
                 try:
