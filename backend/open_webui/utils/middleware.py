@@ -260,6 +260,9 @@ async def chat_completion_tools_handler(
                     tool_result = str(e)
 
                 tool_result_files = []
+                if isinstance(tool_result, tuple):
+                    tool_result, _ = tool_result
+
                 if isinstance(tool_result, list):
                     for item in tool_result:
                         # check if string
