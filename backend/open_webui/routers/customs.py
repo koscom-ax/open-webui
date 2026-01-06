@@ -89,7 +89,7 @@ async def custom_signin(request: Request, response: Response):
 
             if groups:
                 # Process groups: create new ones or update existing
-                existing_groups = {grp.name: grp for grp in Groups.get_groups()}
+                existing_groups = {grp.name: grp for grp in Groups.get_groups(None)}
                 for group_name in groups:
                     if group_name not in existing_groups:
                         group_form = GroupForm(name=group_name, description="", permissions={})
