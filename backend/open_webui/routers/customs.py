@@ -88,22 +88,23 @@ async def custom_signin(request: Request, response: Response):
                 raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
 
             if groups:
-                # Process groups: create new ones or update existing
-                existing_groups = {grp.name: grp for grp in Groups.get_groups(None)}
-                for group_name in groups:
+                # Process groups: ensure group exists and add user as a member.
+                # NOTE: Group membership is stored in `GroupMember` table; group rows do not have `user_ids`.
+                existing_groups = {grp.name: grp for grp in Groups.get_all_groups()}
+                for group_name in set(groups):
                     if group_name not in existing_groups:
-                        group_form = GroupForm(name=group_name, description="", permissions={})
+                        group_form = GroupForm(
+                            name=group_name,
+                            description="",
+                            permissions={},
+                        )
                         new_group = Groups.insert_new_group(user.id, group_form)
-                        existing_groups[group_name] = new_group
+                        if new_group:
+                            existing_groups[group_name] = new_group
 
-                    updated_user_ids = list(set(existing_groups[group_name].user_ids + [user.id]))
-                    update_form = GroupUpdateForm(
-                        name=existing_groups[group_name].name,
-                        description=existing_groups[group_name].description,
-                        user_ids=updated_user_ids,
-                        permissions=existing_groups[group_name].permissions,
-                    )
-                    Groups.update_group_by_id(id=existing_groups[group_name].id, form_data=update_form)
+                    group = existing_groups.get(group_name)
+                    if group:
+                        Groups.add_users_to_group(id=group.id, user_ids=[user.id])
 
             token, expires_at = generate_and_set_cookie(user)
 
