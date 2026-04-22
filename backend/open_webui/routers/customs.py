@@ -25,6 +25,8 @@ from open_webui.utils.auth import (
 )
 
 
+log = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -55,7 +57,20 @@ async def custom_signin(request: Request, response: Response):
     image = data.get("image")
     groups = data.get("groups")
 
+    log.info(
+        "[customs.signin] request received: email=%s name=%s groups=%s client=%s",
+        email,
+        name,
+        groups,
+        request.client.host if request.client else None,
+    )
+
     user = Users.get_user_by_email(email)
+    log.info(
+        "[customs.signin] user lookup by email=%s -> %s",
+        email,
+        f"id={user.id} role={user.role}" if isinstance(user, UserModel) else "NOT FOUND (will create)",
+    )
 
     # Clear any existing cookie token
     response.delete_cookie("token")
@@ -68,6 +83,14 @@ async def custom_signin(request: Request, response: Response):
             datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
             if expires_at
             else None
+        )
+        log.info(
+            "[customs.signin] issuing token: user_id=%s email=%s role=%s expires_at=%s token_prefix=%s",
+            user.id,
+            user.email,
+            user.role,
+            datetime_expires_at.isoformat() if datetime_expires_at else None,
+            (token[:16] + "...") if token else None,
         )
         response.set_cookie(
             key="token",
@@ -82,6 +105,12 @@ async def custom_signin(request: Request, response: Response):
     if not isinstance(user, UserModel):
         role = "admin" if Users.get_num_users() == 0 else request.app.state.config.DEFAULT_USER_ROLE
         user = Auths.insert_new_auth(email.lower(), str(uuid.uuid4()), name, image, role)
+        log.info(
+            "[customs.signin] new user created: id=%s email=%s role=%s",
+            getattr(user, "id", None),
+            getattr(user, "email", None),
+            getattr(user, "role", None),
+        )
 
         try:
             if not user:
@@ -109,11 +138,20 @@ async def custom_signin(request: Request, response: Response):
             token, expires_at = generate_and_set_cookie(user)
 
         except Exception as e:
+            log.exception("[customs.signin] failed during user/group setup, rolling back: %s", e)
             Auths.delete_auth_by_id(user.id)
             response.delete_cookie("token")
             raise HTTPException(status_code=500, detail=str(e))
     else:
         token, expires_at = generate_and_set_cookie(user)
+
+    log.info(
+        "[customs.signin] signin complete: user_id=%s email=%s role=%s expires_at=%s",
+        user.id,
+        user.email,
+        user.role,
+        expires_at,
+    )
 
     return {
         "token": token,
