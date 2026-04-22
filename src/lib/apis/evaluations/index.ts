@@ -93,13 +93,116 @@ export const getAllFeedbacks = async (token: string = '') => {
 	return res;
 };
 
-export const getFeedbackItems = async (token: string = '', orderBy, direction, page) => {
+export const getLeaderboard = async (token: string = '', query: string = '') => {
+	let error = null;
+
+	const searchParams = new URLSearchParams();
+	if (query) searchParams.append('query', query);
+
+	const res = await fetch(
+		`${WEBUI_API_BASE_URL}/evaluations/leaderboard?${searchParams.toString()}`,
+		{
+			method: 'GET',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				authorization: `Bearer ${token}`
+			}
+		}
+	)
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getModelHistory = async (token: string = '', modelId: string, days: number = 30) => {
+	let error = null;
+
+	const searchParams = new URLSearchParams();
+	searchParams.append('days', days.toString());
+
+	const res = await fetch(
+		`${WEBUI_API_BASE_URL}/evaluations/leaderboard/${encodeURIComponent(modelId)}/history?${searchParams.toString()}`,
+		{
+			method: 'GET',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				authorization: `Bearer ${token}`
+			}
+		}
+	)
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getFeedbackModelIds = async (token: string = '') => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedbacks/models`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail;
+			console.error(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getFeedbackItems = async (
+	token: string = '',
+	orderBy,
+	direction,
+	page,
+	modelId: string = ''
+) => {
 	let error = null;
 
 	const searchParams = new URLSearchParams();
 	if (orderBy) searchParams.append('order_by', orderBy);
 	if (direction) searchParams.append('direction', direction);
 	if (page) searchParams.append('page', page.toString());
+	if (modelId) searchParams.append('model_id', modelId);
 
 	const res = await fetch(
 		`${WEBUI_API_BASE_URL}/evaluations/feedbacks/list?${searchParams.toString()}`,
@@ -132,17 +235,23 @@ export const getFeedbackItems = async (token: string = '', orderBy, direction, p
 	return res;
 };
 
-export const exportAllFeedbacks = async (token: string = '') => {
+export const exportAllFeedbacks = async (token: string = '', modelId: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedbacks/all/export`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
+	const searchParams = new URLSearchParams();
+	if (modelId) searchParams.append('model_id', modelId);
+
+	const res = await fetch(
+		`${WEBUI_API_BASE_URL}/evaluations/feedbacks/all/export?${searchParams.toString()}`,
+		{
+			method: 'GET',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				authorization: `Bearer ${token}`
+			}
 		}
-	})
+	)
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();

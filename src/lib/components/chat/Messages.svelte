@@ -9,7 +9,7 @@
 		currentChatPage,
 		temporaryChatEnabled
 	} from '$lib/stores';
-	import { tick, getContext, onMount, createEventDispatcher } from 'svelte';
+	import { tick, getContext, onMount, onDestroy, createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 
 	import { toast } from 'svelte-sonner';
@@ -57,8 +57,107 @@
 
 	export let onSelect = (e) => {};
 
-	export let messagesCount: number | null = 20;
+	export let messagesCount: number | null = 8;
 	let messagesLoading = false;
+
+	// Off-screen message unloading. Heights are measured on scroll so spacers
+	// always match real sizes — no scroll jumps, no feedback loops needed.
+	const OVERSCAN = 3;
+	const DEFAULT_HEIGHT = 150;
+	let visibleStart = 0;
+	let visibleEnd = 0;
+	let messageHeights = new Map();
+	let topSpacerHeight = 0;
+	let bottomSpacerHeight = 0;
+	let pendingCull = null;
+
+	// Helper: get height for a message (cached or default)
+	const heightOf = (id) => messageHeights.get(id) ?? DEFAULT_HEIGHT;
+
+	/** Measure all currently rendered message elements and cache their heights */
+	const measureMessageHeights = () => {
+		const elements = document
+			.getElementById('messages-container')
+			?.querySelectorAll('[role="listitem"]');
+		if (!elements) return;
+
+		messageHeights = new Map([
+			...messageHeights,
+			...Array.from(elements)
+				.map((el, i) => [messages[visibleStart + i]?.id, el.getBoundingClientRect().height])
+				.filter(([id]) => id != null)
+		]);
+	};
+
+	/** Compute visible range from current scroll position and apply */
+	const updateVisibleRange = () => {
+		const container = document.getElementById('messages-container');
+		if (!container || messages.length === 0) return;
+
+		const st = container.scrollTop;
+		const ch = container.clientHeight;
+
+		// Build prefix sums from measured heights
+		const prefixSums = messages.reduce(
+			(acc, m) => [...acc, acc[acc.length - 1] + heightOf(m.id)],
+			[0]
+		);
+
+		const firstVisible = Math.max(0, prefixSums.findIndex((h) => h > st) - 1);
+		const lastVisible = prefixSums.findIndex((h) => h > st + ch);
+
+		// Only cull messages that have been measured (so spacer height is accurate)
+		// findIndex returns -1 when all are measured → no limit on culling
+		const firstUnmeasured = messages.findIndex((m) => !messageHeights.has(m.id));
+		const cullLimit = firstUnmeasured === -1 ? messages.length : firstUnmeasured;
+
+		visibleStart = Math.max(0, Math.min(firstVisible - OVERSCAN, cullLimit));
+		visibleEnd = Math.min(
+			messages.length,
+			(lastVisible === -1 ? messages.length : lastVisible) + OVERSCAN
+		);
+		topSpacerHeight = prefixSums[visibleStart] ?? 0;
+		bottomSpacerHeight = (prefixSums[messages.length] ?? 0) - (prefixSums[visibleEnd] ?? 0);
+	};
+
+	/** Scroll handler: measure every frame, cull via rAF (same throttle as pendingRebuild) */
+	const handleContainerScroll = () => {
+		measureMessageHeights();
+
+		// Don't cull during progressive loading
+		if (messagesLoading) return;
+
+		if (!pendingCull) {
+			pendingCull = requestAnimationFrame(() => {
+				pendingCull = null;
+				updateVisibleRange();
+			});
+		}
+	};
+
+	let scrollListenerAttached = false;
+
+	const attachScrollListener = () => {
+		if (scrollListenerAttached) return;
+		const container = document.getElementById('messages-container');
+		if (!container) return;
+
+		container.addEventListener('scroll', handleContainerScroll, { passive: true });
+		scrollListenerAttached = true;
+	};
+
+	onMount(() => {
+		attachScrollListener();
+	});
+
+	onDestroy(() => {
+		const container = document.getElementById('messages-container');
+		if (container && scrollListenerAttached) {
+			container.removeEventListener('scroll', handleContainerScroll);
+		}
+		cancelAnimationFrame(pendingCull);
+		cancelAnimationFrame(pendingRebuild);
+	});
 
 	const loadMoreMessages = async () => {
 		// scroll slightly down to disable continuous loading
@@ -66,26 +165,75 @@
 		element.scrollTop = element.scrollTop + 100;
 
 		messagesLoading = true;
-		messagesCount += 20;
+		messagesCount += 8;
+
+		buildMessages();
+
+		// Show all messages during progressive loading (no culling)
+		visibleStart = 0;
+		visibleEnd = messages.length;
+		topSpacerHeight = 0;
+		bottomSpacerHeight = 0;
 
 		await tick();
 
 		messagesLoading = false;
 	};
 
-	$: if (history.currentId) {
+	let pendingRebuild = null;
+	let lastCurrentId = null;
+
+	const buildMessages = () => {
 		let _messages = [];
 
 		let message = history.messages[history.currentId];
+		const visitedMessageIds = new Set();
+
 		while (message && (messagesCount !== null ? _messages.length <= messagesCount : true)) {
-			_messages.unshift({ ...message });
+			if (visitedMessageIds.has(message.id)) {
+				console.warn('Circular dependency detected in message history', message.id);
+				break;
+			}
+			visitedMessageIds.add(message.id);
+
+			_messages.push(message);
 			message = message.parentId !== null ? history.messages[message.parentId] : null;
 		}
 
-		messages = _messages;
-	} else {
-		messages = [];
-	}
+		messages = _messages.reverse();
+		visibleEnd = messages.length;
+	};
+
+	// Throttle message list rebuilds to once per animation frame during streaming.
+	// Structural changes (currentId change) always rebuild immediately.
+	const handleHistoryChange = (currentId, _messages) => {
+		if (!currentId) {
+			messages = [];
+			return;
+		}
+
+		const currentIdChanged = currentId !== lastCurrentId;
+		lastCurrentId = currentId;
+
+		if (currentIdChanged) {
+			// Structural change: new chat, navigation, new message — rebuild immediately
+			cancelAnimationFrame(pendingRebuild);
+			pendingRebuild = null;
+			buildMessages();
+			// No explicit culling needed — scrollToBottom will fire a scroll event,
+			// which triggers handleContainerScroll → rAF → updateVisibleRange
+		} else if (_messages) {
+			// Content update (streaming) — throttle to once per frame
+			if (!pendingRebuild) {
+				pendingRebuild = requestAnimationFrame(() => {
+					pendingRebuild = null;
+					buildMessages();
+				});
+			}
+		}
+	};
+
+	$: handleHistoryChange(history.currentId, history.messages);
 
 	$: if (autoScroll && bottomPadding) {
 		(async () => {
@@ -346,6 +494,10 @@
 	};
 
 	const saveMessage = async (messageId, message) => {
+		if (!history.messages?.[messageId]) {
+			return;
+		}
+
 		history.messages[messageId] = message;
 		await updateChat();
 	};
@@ -380,12 +532,7 @@
 			delete history.messages[id];
 		});
 
-		await tick();
-
-		showMessage({ id: parentMessageId });
-
-		// Update the chat
-		await updateChat();
+		showMessage({ id: parentMessageId }, false);
 	};
 
 	const triggerScroll = () => {
@@ -423,7 +570,13 @@
 						</Loader>
 					{/if}
 					<ul role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">
-						{#each messages as message, messageIdx (message.id)}
+						<!-- Top spacer: sum of cached heights for messages above visible range -->
+						{#if topSpacerHeight > 0}
+							<div style="height: {topSpacerHeight}px" aria-hidden="true" />
+						{/if}
+
+						{#each messages.slice(visibleStart, visibleEnd) as message, i (message.id)}
+							{@const messageIdx = visibleStart + i}
 							<Message
 								{chatId}
 								bind:history
@@ -452,6 +605,11 @@
 								{topPadding}
 							/>
 						{/each}
+
+						<!-- Bottom spacer: sum of cached heights for messages below visible range -->
+						{#if bottomSpacerHeight > 0}
+							<div style="height: {bottomSpacerHeight}px" aria-hidden="true" />
+						{/if}
 					</ul>
 				</section>
 				<div class="pb-18" />
