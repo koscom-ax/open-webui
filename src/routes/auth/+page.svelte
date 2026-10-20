@@ -165,6 +165,43 @@
 		}
 	}
 
+	// KOSCOM custom: accept JWT supplied via `?token=` (or nested in `?redirect=`)
+	// from external SSO (e.g. play_ax) where the cookie set by /api/v1/customs/auths/signin
+	// is consumed by the SSO server and never reaches the browser.
+	const tokenSignInHandler = async (): Promise<boolean> => {
+		let externalToken = $page.url.searchParams.get('token');
+		let cleanRedirect: string | null = null;
+
+		const redirectParam = $page.url.searchParams.get('redirect');
+		if (!externalToken && redirectParam && redirectParam.includes('token=')) {
+			try {
+				const u = new URL(redirectParam, window.location.origin);
+				externalToken = u.searchParams.get('token');
+				u.searchParams.delete('token');
+				cleanRedirect = `${u.pathname}${u.search}${u.hash}` || '/';
+			} catch (e) {
+				console.warn('Failed to parse nested token redirect', e);
+			}
+		}
+
+		if (!externalToken) {
+			return false;
+		}
+
+		const sessionUser = await getSessionUser(externalToken).catch((error) => {
+			console.error('tokenSignInHandler: invalid token', error);
+			return null;
+		});
+
+		if (!sessionUser) {
+			return false;
+		}
+
+		localStorage.token = externalToken;
+		await setSessionUser(sessionUser, cleanRedirect ?? redirectParam ?? '/');
+		return true;
+	};
+
 	onMount(async () => {
 		const redirectPath = $page.url.searchParams.get('redirect');
 		if ($user !== undefined) {
@@ -178,6 +215,11 @@
 		const error = $page.url.searchParams.get('error');
 		if (error) {
 			toast.error(error);
+		}
+
+		// KOSCOM custom: try external token sign-in before falling back to OAuth/cookie flow
+		if (await tokenSignInHandler()) {
+			return;
 		}
 
 		await oauthCallbackHandler();
