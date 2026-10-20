@@ -65,7 +65,7 @@ async def custom_signin(request: Request, response: Response):
         request.client.host if request.client else None,
     )
 
-    user = Users.get_user_by_email(email)
+    user = await Users.get_user_by_email(email)
     log.info(
         "[customs.signin] user lookup by email=%s -> %s",
         email,
@@ -103,8 +103,8 @@ async def custom_signin(request: Request, response: Response):
         return token, expires_at
 
     if not isinstance(user, UserModel):
-        role = "admin" if Users.get_num_users() == 0 else request.app.state.config.DEFAULT_USER_ROLE
-        user = Auths.insert_new_auth(email.lower(), str(uuid.uuid4()), name, image, role)
+        role = "admin" if (await Users.get_num_users()) == 0 else request.app.state.config.DEFAULT_USER_ROLE
+        user = await Auths.insert_new_auth(email.lower(), str(uuid.uuid4()), name, image, role)
         log.info(
             "[customs.signin] new user created: id=%s email=%s role=%s",
             getattr(user, "id", None),
@@ -119,7 +119,7 @@ async def custom_signin(request: Request, response: Response):
             if groups:
                 # Process groups: ensure group exists and add user as a member.
                 # NOTE: Group membership is stored in `GroupMember` table; group rows do not have `user_ids`.
-                existing_groups = {grp.name: grp for grp in Groups.get_all_groups()}
+                existing_groups = {grp.name: grp for grp in await Groups.get_all_groups()}
                 for group_name in set(groups):
                     if group_name not in existing_groups:
                         group_form = GroupForm(
@@ -127,19 +127,20 @@ async def custom_signin(request: Request, response: Response):
                             description="",
                             permissions={},
                         )
-                        new_group = Groups.insert_new_group(user.id, group_form)
+                        new_group = await Groups.insert_new_group(user.id, group_form)
                         if new_group:
                             existing_groups[group_name] = new_group
 
                     group = existing_groups.get(group_name)
                     if group:
-                        Groups.add_users_to_group(id=group.id, user_ids=[user.id])
+                        await Groups.add_users_to_group(id=group.id, user_ids=[user.id])
 
             token, expires_at = generate_and_set_cookie(user)
 
         except Exception as e:
             log.exception("[customs.signin] failed during user/group setup, rolling back: %s", e)
-            Auths.delete_auth_by_id(user.id)
+            if isinstance(user, UserModel):
+                await Auths.delete_auth_by_id(user.id)
             response.delete_cookie("token")
             raise HTTPException(status_code=500, detail=str(e))
     else:
