@@ -6,7 +6,6 @@ from open_webui.models.auths import (
     Auths,
     UserModel,
 )
-from open_webui.models.config import Config
 from open_webui.models.groups import GroupForm, GroupUpdateForm
 from open_webui.models.users import Users
 from open_webui.models.groups import Groups
@@ -92,8 +91,10 @@ async def custom_signin(request: Request, response: Response):
         )
         return token, expires_at
 
+    # play_ax already gates who may sign in, so SSO users must never wait in 'pending'
+    # regardless of the admin "Default User Role" setting.
     if not isinstance(user, UserModel):
-        role = "admin" if (await Users.get_num_users()) == 0 else await Config.get("ui.default_user_role")
+        role = "admin" if (await Users.get_num_users()) == 0 else "user"
         user = await Auths.insert_new_auth(email.lower(), str(uuid.uuid4()), name, image, role)
         log.info(
             "[customs.signin] new user created: id=%s email=%s role=%s",
@@ -134,6 +135,9 @@ async def custom_signin(request: Request, response: Response):
             response.delete_cookie("token")
             raise HTTPException(status_code=500, detail=str(e))
     else:
+        if user.role == "pending":
+            user = await Users.update_user_role_by_id(user.id, "user")
+            log.info("[customs.signin] pending user activated: id=%s email=%s", user.id, user.email)
         token, expires_at = await generate_and_set_cookie(user)
 
     log.info(
