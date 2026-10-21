@@ -1,6 +1,4 @@
 import uuid
-import time
-import datetime
 import logging
 from functools import wraps
 
@@ -8,21 +6,16 @@ from open_webui.models.auths import (
     Auths,
     UserModel,
 )
+from open_webui.models.config import Config
 from open_webui.models.groups import GroupForm, GroupUpdateForm
 from open_webui.models.users import Users
 from open_webui.models.groups import Groups
 
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import (
-    WEBUI_AUTH_COOKIE_SAME_SITE,
-    WEBUI_AUTH_COOKIE_SECURE,
-)
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from open_webui.utils.misc import parse_duration
-from open_webui.utils.auth import (
-    create_token,
-)
+from open_webui.utils.auth import create_session_response
+from open_webui.utils.mfa import get_auth
 
 
 log = logging.getLogger(__name__)
@@ -75,35 +68,32 @@ async def custom_signin(request: Request, response: Response):
     # Clear any existing cookie token
     response.delete_cookie("token")
 
-    def generate_and_set_cookie(user):
-        expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
-        token = create_token(data={"id": user.id}, expires_delta=expires_delta)
-        expires_at = int(time.time()) + int(expires_delta.total_seconds()) if expires_delta else None
-        datetime_expires_at = (
-            datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
-            if expires_at
-            else None
+    async def generate_and_set_cookie(user):
+        # v0.12+: a token must carry the account's session_stamp or is_valid_token rejects it,
+        # so issue it through upstream's session helper instead of create_token().
+        # play_ax vouches for the identity server-to-server, which upstream models as 'trusted_header'.
+        session = await create_session_response(
+            request,
+            user,
+            response=response,
+            set_cookie=True,
+            source="trusted_header",
+            auth=await get_auth(user.id),
         )
+        token = session["token"]
+        expires_at = session["expires_at"]
         log.info(
             "[customs.signin] issuing token: user_id=%s email=%s role=%s expires_at=%s token_prefix=%s",
             user.id,
             user.email,
             user.role,
-            datetime_expires_at.isoformat() if datetime_expires_at else None,
+            expires_at,
             (token[:16] + "...") if token else None,
-        )
-        response.set_cookie(
-            key="token",
-            value=token,
-            expires=datetime_expires_at,
-            httponly=True,
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
         )
         return token, expires_at
 
     if not isinstance(user, UserModel):
-        role = "admin" if (await Users.get_num_users()) == 0 else request.app.state.config.DEFAULT_USER_ROLE
+        role = "admin" if (await Users.get_num_users()) == 0 else await Config.get("ui.default_user_role")
         user = await Auths.insert_new_auth(email.lower(), str(uuid.uuid4()), name, image, role)
         log.info(
             "[customs.signin] new user created: id=%s email=%s role=%s",
@@ -135,7 +125,7 @@ async def custom_signin(request: Request, response: Response):
                     if group:
                         await Groups.add_users_to_group(id=group.id, user_ids=[user.id])
 
-            token, expires_at = generate_and_set_cookie(user)
+            token, expires_at = await generate_and_set_cookie(user)
 
         except Exception as e:
             log.exception("[customs.signin] failed during user/group setup, rolling back: %s", e)
@@ -144,7 +134,7 @@ async def custom_signin(request: Request, response: Response):
             response.delete_cookie("token")
             raise HTTPException(status_code=500, detail=str(e))
     else:
-        token, expires_at = generate_and_set_cookie(user)
+        token, expires_at = await generate_and_set_cookie(user)
 
     log.info(
         "[customs.signin] signin complete: user_id=%s email=%s role=%s expires_at=%s",
