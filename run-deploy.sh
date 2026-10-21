@@ -81,7 +81,12 @@ build_image() {
     # Step 3: Copy local cache files into the temporary container
     echo "Copying local cache files from '$LOCAL_CACHE_DIR' to '$CACHE_DIR' inside the container..."
     docker cp "$LOCAL_CACHE_DIR"/. temp_container:"$CACHE_DIR"/
-    docker exec temp_container python -c "import nltk; nltk.download('punkt_tab')"
+    # nltk was dropped from upstream deps in v0.12, so only fetch punkt_tab when it is still installed
+    if docker exec temp_container python -c "import nltk" > /dev/null 2>&1; then
+        docker exec temp_container python -c "import nltk; nltk.download('punkt_tab')"
+    else
+        echo "nltk is not installed in the image. Skipping punkt_tab download."
+    fi
 
     # commit: Commit the container's state to a new image
     echo "Committing the container with cache files to a new image '$UPDATED_IMAGE_TAG'..."
