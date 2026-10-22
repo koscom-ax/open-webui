@@ -8,7 +8,7 @@
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
 	import { settings } from '$lib/stores';
 	import { getKnowledgeById } from '$lib/apis/knowledge';
-	import { getFileById, getFileContentById } from '$lib/apis/files';
+	import { getFileById, getFileBlobById, getFileContentById } from '$lib/apis/files';
 
 	import CodeBlock from '$lib/components/chat/Messages/CodeBlock.svelte';
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
@@ -24,6 +24,8 @@
 	import Tooltip from './Tooltip.svelte';
 	import dayjs from 'dayjs';
 	import Spinner from './Spinner.svelte';
+	import { isHwpFile } from '$lib/utils';
+	import HwpViewer from './HwpViewer.svelte';
 	import PDFViewer from './PDFViewer.svelte';
 	import PanzoomContainer from './PanzoomContainer.svelte';
 	import DocxPreview from './DocxPreview.svelte';
@@ -43,6 +45,7 @@
 	let isExcel = false;
 	let isDocx = false;
 	let isPptx = false;
+	let isHwp = false;
 
 	let selectedTab = '';
 	let excelWorkbook: WorkBook | null = null;
@@ -128,6 +131,8 @@
 				item.name.toLowerCase().endsWith('.xlsx') ||
 				item.name.toLowerCase().endsWith('.csv')));
 
+	$: isHwp = isHwpFile(item?.name, item?.meta?.content_type);
+
 	$: isDocx =
 		item?.meta?.content_type ===
 			'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -197,7 +202,38 @@
 		}
 	};
 
+	// HWP/HWPX preview state (rendered in the browser by HwpViewer)
+	let hwpData: ArrayBuffer | null = null;
+	let hwpLoading = false;
+	let hwpError = '';
+	let hwpLoadedId = '';
+
+	const loadHwpPreview = async () => {
+		const id = item?.id;
+		if (!id || hwpLoadedId === id) return;
+		hwpLoadedId = id;
+		hwpLoading = true;
+		hwpError = '';
+		hwpData = null;
+		try {
+			const buf = await (await getFileBlobById(localStorage.token, id)).arrayBuffer();
+			if (hwpLoadedId === id) hwpData = buf;
+		} catch (e) {
+			if (hwpLoadedId === id) {
+				hwpError = `${$i18n.t('Failed to load HWP preview.')} ${e?.message ?? e}`;
+				hwpLoadedId = '';
+			}
+		} finally {
+			if (hwpLoadedId === id || hwpError) hwpLoading = false;
+		}
+	};
+
+	$: if (show && isHwp && selectedTab === 'preview') loadHwpPreview();
+
 	const loadContent = async () => {
+		hwpLoadedId = '';
+		hwpData = null;
+		hwpError = '';
 		selectedTab = '';
 		expandedContent = false;
 		docxData = null;
@@ -386,7 +422,7 @@
 					</div>
 				{/if}
 
-				{#if isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx}
+				{#if isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx || isHwp}
 					<div
 						class="flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-normal bg-transparent dark:text-gray-200"
 					>
@@ -513,6 +549,18 @@
 							url={`${WEBUI_API_BASE_URL}/files/${item.id}/content`}
 							className="w-full h-[70vh] border-0 rounded-lg"
 						/>
+					{:else if isHwp}
+						{#if hwpLoading}
+							<div class="flex items-center justify-center h-[40vh]">
+								<Spinner className="size-5" />
+							</div>
+						{:else if hwpError}
+							<div class="text-red-500 text-sm p-4">
+								{hwpError}
+							</div>
+						{:else if hwpData}
+							<HwpViewer data={hwpData} className="w-full h-[70vh] border-0 rounded-lg" />
+						{/if}
 					{:else if isExcel}
 						{#if excelError}
 							<div class="text-red-500 text-sm p-4">

@@ -2504,3 +2504,14 @@ export const displayFileHandler = (
 		stores.showFileNavPath.set(page ? { path, page } : path);
 	}
 };
+
+const HWP_CONTENT_TYPES = [
+	'application/x-hwp',
+	'application/haansofthwp',
+	'application/vnd.hancom.hwp',
+	'application/vnd.hancom.hwpx',
+	'application/hwp+zip'
+];
+
+export const isHwpFile = (name?: string | null, contentType?: string | null): boolean =>
+	HWP_CONTENT_TYPES.includes(contentType ?? '') || /\.hwpx?$/i.test(name ?? '');

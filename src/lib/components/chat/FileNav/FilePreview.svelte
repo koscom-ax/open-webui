@@ -9,6 +9,7 @@
 	import PdfPagesPreview from '../../common/PdfPagesPreview.svelte';
 	import PanzoomContainer from '../../common/PanzoomContainer.svelte';
 	import DocxPreview from '../../common/DocxPreview.svelte';
+	import HwpViewer from '../../common/HwpViewer.svelte';
 	import PptxPreview from '../../common/PptxPreview.svelte';
 	import JsonTreeView from './JsonTreeView.svelte';
 	import NotebookView from './NotebookView.svelte';
@@ -28,6 +29,7 @@
 	export let filePdfData: ArrayBuffer | null = null;
 	export let fileSqliteData: ArrayBuffer | null = null;
 	export let fileDocxData: ArrayBuffer | null = null;
+	export let fileHwpData: ArrayBuffer | null = null;
 	export let fileContent: string | null = null;
 
 	// Terminal connection for notebook execution
@@ -284,6 +286,7 @@
 <div
 	class="flex-1 {fileImageUrl !== null ||
 	fileDocxData !== null ||
+	fileHwpData !== null ||
 	filePdfData !== null ||
 	(fileOfficeSlides !== null && fileOfficeSlides.length > 0)
 		? 'overflow-hidden'
@@ -332,6 +335,8 @@
 		/>
 	{:else if fileSqliteData !== null}
 		<SqliteView data={fileSqliteData} />
+	{:else if fileHwpData !== null}
+		<HwpViewer data={fileHwpData} className="w-full h-full" />
 	{:else if fileDocxData !== null}
 		<DocxPreview data={fileDocxData} {targetPage} className="w-full h-full" />
 	{:else if fileOfficeHtml !== null}

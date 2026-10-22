@@ -9,6 +9,7 @@
 		getFileIndexedText,
 		updateFileDataContentById
 	} from '$lib/apis/files';
+	import { isHwpFile } from '$lib/utils';
 	import FilePreview from '$lib/components/chat/FileNav/FilePreview.svelte';
 	import FileCodeEditor from '$lib/components/chat/FileNav/FileCodeEditor.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
@@ -116,7 +117,9 @@
 			const codeFile = isCodeFile(name);
 			let data: Record<string, any>;
 			previewName = name;
-			if (mime === 'application/pdf' || ext === 'pdf')
+			if (isHwpFile(name, file.meta?.content_type))
+				data = { fileHwpData: await blob.arrayBuffer() };
+			else if (mime === 'application/pdf' || ext === 'pdf')
 				data = { filePdfData: await blob.arrayBuffer() };
 			else if (ext === 'svg' || mime === 'image/svg+xml') {
 				previewName = `${name}.svg`;

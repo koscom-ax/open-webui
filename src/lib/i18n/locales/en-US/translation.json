@@ -4082,5 +4082,8 @@
 	"YouTube": "",
 	"YouTube video player": "",
 	"Zoom in": "",
-	"Zoom out": ""
+	"Zoom out": "",
+	"Failed to load HWP preview.": "Failed to load HWP preview.",
+	"Failed to render this page.": "Failed to render this page.",
+	"This document cannot be previewed (encrypted, DRM-protected or corrupted).": "This document cannot be previewed (encrypted, DRM-protected or corrupted)."
 }
