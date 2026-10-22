@@ -3,6 +3,7 @@
 	let rhwpPromise: Promise<typeof import('@rhwp/core')> | null = null;
 	let measureCtx: CanvasRenderingContext2D | null = null;
 	let lastFont = '';
+	let instanceCounter = 0;
 
 	const loadRhwp = () => {
 		if (!rhwpPromise) {
@@ -34,12 +35,14 @@
 <script lang="ts">
 	import { getContext, onDestroy, tick } from 'svelte';
 	import DOMPurify from 'dompurify';
+	import { scopeSvgIds } from '$lib/utils';
 	import Spinner from './Spinner.svelte';
 
 	export let data: ArrayBuffer;
 	export let className = 'w-full h-[70vh]';
 
 	const i18n = getContext<any>('i18n');
+	const idPrefix = `hwp${++instanceCounter}`;
 
 	let doc: any = null;
 	let pages: { w: number; h: number }[] = [];
@@ -66,7 +69,9 @@
 		rendered.add(i);
 		try {
 			const svg = doc.renderPageSvg(i);
-			el.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+			el.innerHTML = DOMPurify.sanitize(scopeSvgIds(svg, `${idPrefix}-p${i}-`), {
+				USE_PROFILES: { svg: true, svgFilters: true }
+			});
 			const node = el.querySelector('svg');
 			if (node) {
 				node.removeAttribute('width');

@@ -2515,3 +2515,25 @@ const HWP_CONTENT_TYPES = [
 
 export const isHwpFile = (name?: string | null, contentType?: string | null): boolean =>
 	HWP_CONTENT_TYPES.includes(contentType ?? '') || /\.hwpx?$/i.test(name ?? '');
+
+/**
+ * 여러 SVG 를 한 HTML 문서에 함께 넣을 때 id 충돌(clip-path 등)을 막기 위해
+ * SVG 안의 모든 id 와 그 참조(url(#id), href="#id", xlink:href="#id")에 prefix 를 붙인다.
+ * SVG 안에 정의된 id 만 대상으로 하며 그 밖의 텍스트·외부 url(...) 은 건드리지 않는다.
+ */
+export const scopeSvgIds = (svg: string, prefix: string): string => {
+	const ids = new Set<string>();
+	const idAttr = /(\sid\s*=\s*)(["'])([^"']*)\2/g;
+	for (const m of svg.matchAll(idAttr)) ids.add(m[3]);
+	if (ids.size === 0) return svg;
+
+	return svg
+		.replace(idAttr, (_m, head, q, id) => `${head}${q}${prefix}${id}${q}`)
+		.replace(
+			/url\(\s*(["']|&quot;)?\s*#([^)"'\s&]+)\s*(\1)?\s*\)/g,
+			(m, q, id, q2) => (ids.has(id) ? `url(${q ?? ''}#${prefix}${id}${q2 ?? ''})` : m)
+		)
+		.replace(/((?:xlink:)?href\s*=\s*)(["'])#([^"']*)\2/g, (m, head, q, id) =>
+			ids.has(id) ? `${head}${q}#${prefix}${id}${q}` : m
+		);
+};
